@@ -9,28 +9,53 @@ const { getQueryId } = require('./helper');
 
 const DELIMITER = '-----------------------------------------------------------------------';
 const MESSAGE = {
-  ONLINE_RECORD: 'Здесь можно записаться или отменить существующую запись',
-  SELECT_OFFICE: 'Выберите удобный для вас салон',
+  DESCRIPTION_MAIN: '<b>Здесь вы можете:</b>\n' + 
+                    '1. Записаться на процедуры,\n' +
+                    '2. Отменить запись,\n' +
+                    '3. Посмотреть список и стоимость услуг,\n' +
+                    '4. Узнать количество бонусов на счету,\n' +
+                    '5. Получить дополнительные баллы, пригласив друга',
+  ONLINE_RECORD: 'Здесь вы можете записаться или отменить существующие записи',
+  SELECT_OFFICE: 'Выберите салон',
+  SELECT_DATE: 'Выберите дату',
+  SELECT_TIME: 'Выберите время',
+  SELECT_NOTIFICATION: 'Когда вам удобнее напомнить о записи?',
+  REFERAL_PROGRAM_DESCRIPTION: 'Вы можете поделиться своим реферальным кодом с другом. ' +
+                                'Если он его активирует и воспользуется нашими услугами, ' +
+                                'вы и ваш товарищ получите на счет бонусные рубли',
+  INSERT_REFERAL_CODE: 'Введите реферальный код вашего друга',
+  CANCEL_RECORD: 'Список ваших записей',
   GO_TO_MAIN_PAGE: 'Главное меню',
+  GO_TO_ONLINE_RECORD_PAGE: 'Меню онлайн-записи',
+  GO_TO_REFERAL_PROGRAM_PAGE: 'Меню реферальной программы',
+  BONUSES: bonusesAccount => {
+    return `На вашем счету ${bonusesAccount} бонусных рублей`;
+  },
+  REFERAL_CODE: customerId => {
+    return `Ваш реферальный код:\n${customerId}`;
+  },
   SERVICES: services => {
     return '<b>Выберите услугу:</b>\n' + services.map((s, i) => {
-      return `<b>${i+1}.</b> ${s.title} - ${s.price} руб.`
+      return `${i+1}. ${s.title} - ${s.price} руб.`
     }).join('\n')
   },
-  SELECT_DATE: 'Выберите дату.',
-  SELECT_TIME: 'Выберите время.',
-  SELECT_NOTIFICATION: 'Когда вам удобнее напомнить о записи?',
-  RECORD_INFORMATION: (adress, date, time, master, service, price, bonus) => {
-    return `Ваша заявка принята!\n\nМы ожидаем вас:\nАдрес: ${adress},\n` +
+  RECORD_INFORMATION: (adress, date, time, master, service, price, bonus, mode) => {
+    if (mode === 'Итог записи') {
+      return `Ваша заявка принята!\n\nМы ожидаем вас:\nАдрес: ${adress},\n` +
             `Дата: ${date},\nВремя: ${time},\nМастер: ${master},\nУслуга: ${service},\n\n` +
             `Стоимость услуги: ${price} руб.,\nПри оплате вам начислится ${bonus} бонусных рублей.`;
-  }
+    } else {
+      return `Адрес: ${adress},\nДата: ${date},\nВремя: ${time},\nМастер: ${master},\nУслуга: ${service},\n\n` +
+            `Стоимость услуги: ${price} руб.,\nПри оплате вам начислится ${bonus} бонусных рублей.`;
+    }
+  },
 }
 const TEXT_BTN = {
-  SELECT_OFFICE: 'Выбрать этот филиал',
+  SELECT_OFFICE: 'Выбрать этот салон',
+  CANCEL_RECORD: 'Отменить запись ⬆️',
   SELECT_MASTER: master => {
     return `Выбрать мастера ${master.firstname}`;
-  },
+  }
 }
 const ACTION_TYPE = {
   CHOUSE_OFFICE: 'cho',
@@ -39,6 +64,7 @@ const ACTION_TYPE = {
   CHOUSE_DATE: 'chd',
   CHOUSE_TIME: 'cht',
   CHOUSE_NOTIFICATION: 'chn',
+  CANCEL_RECORD: 'cr',
   PASS: 'p'
 }
 const NOTIFICATION = [
@@ -48,11 +74,11 @@ const NOTIFICATION = [
 ]
 
 // Модели базы данных
-require('./models/branchOffice.model');
-require('./models/customer.model');
-require('./models/master.model');
-require('./models/record.model');
-require('./models/service.model');
+require('../../models/branchOffice.model');
+require('../../models/customer.model');
+require('../../models/master.model');
+require('../../models/record.model');
+require('../../models/service.model');
 
 const BranchOffice = mongoose.model('BranchOffice');
 const Customer = mongoose.model('Customer');
@@ -75,6 +101,10 @@ mongoose.connect(config.DB_URL, {
 const bot = new TelegramBot(config.TOKEN, {
   polling: true
 });
+
+setInterval(_ => {
+  schedulesRefresh();
+}, 50000);
 
 // Обработка команды /start
 bot.onText(/\/start/, msg => {
@@ -106,12 +136,36 @@ bot.on('message', msg => {
       break;
 
     case navigation.homePage.priceListBtn:
+      Service.find({}).then(services => {
+        const sendHTML = MESSAGE.SERVICES(services);
+
+        bot.sendMessage(chatId, sendHTML, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            keyboard: [[navigation.toMainPageBtn]]
+          }
+        })
+      });
       break;
     
     case navigation.homePage.bonusesBtn:
+      Customer.findOne({telegramId: chatId}).then(customer => {
+        sendText = MESSAGE.BONUSES(customer.bonuses);
+        bot.sendMessage(chatId, sendText, {
+          reply_markup: {
+            keyboard: [[navigation.toMainPageBtn]]
+          }
+        });
+      });
       break;
     
     case navigation.homePage.referralProgramBtn:
+      sendText = MESSAGE.REFERAL_PROGRAM_DESCRIPTION;
+      bot.sendMessage(chatId, sendText, {
+        reply_markup: {
+          keyboard: keyboard.referalProgramKeyboard
+        }
+      });
       break;
     
     // ONLINE RECORD PAGE -------------------------------------------------------------
@@ -119,11 +173,12 @@ bot.on('message', msg => {
     // Начало онлайн-записи
     case navigation.onlineRecordPage.recordBtn:
       // Скрыть клавиатуру
-      // bot.sendMessage(chatId, sendText, {
-      //   reply_markup: {
-      //     remove_keyboard: true
-      //   }
-      // })
+      sendText = MESSAGE.SELECT_OFFICE;
+      bot.sendMessage(chatId, sendText, {
+        reply_markup: {
+          remove_keyboard: true
+        }
+      })
 
       // Создание заявки
       Customer.findOne({telegramId: chatId}).then(customer => {
@@ -142,8 +197,6 @@ bot.on('message', msg => {
         })
       })
 
-      sendText = MESSAGE.SELECT_OFFICE;
-
       BranchOffice.find({}).then(offices =>  {
         let coordinates = [];
 
@@ -159,6 +212,7 @@ bot.on('message', msg => {
               .then(_ => {
                 bot.sendLocation(chatId, coordinates[0], coordinates[1], {
                   reply_markup: {
+                    remove_keyboard: true,
                     inline_keyboard: [
                       [
                         {
@@ -182,11 +236,120 @@ bot.on('message', msg => {
       });
       break;
 
+    // Просмотр или отмена заявки
     case navigation.onlineRecordPage.cancelBtn:
+      sendText = MESSAGE.CANCEL_RECORD;
+      bot.sendMessage(chatId, sendText, {
+        reply_markup: {
+          keyboard: keyboard.cancelRecordKeyboard
+        }
+      });
+
+      Customer.findOne({telegramId: chatId}).then(customer => {
+        Record.find({isActual: true, customer: customer._id}).then(records => {
+          records.forEach(record => {
+            Master.findOne({_id: record.master}).then(master => {
+              BranchOffice.findOne({_id: record.office}).then(office => {
+                Service.findOne({_id: record.service}).then(service => {
+                  const adressParam = office.adress;
+                  const dateParam = helper.stringifyDate(record.date);
+                  const timeParam = helper.stringifyTime(record.time.hours, record.time.minutes);
+                  const masterParam = helper.getFio(master.firstname, master.middlename, master.lastname);
+                  const serviceParam = service.title;
+                  const priceParam = service.price;
+                  const bonusParam = String(Math.round(service.price * service.bonusPercent));
+
+                  sendHTML = MESSAGE.RECORD_INFORMATION(adressParam, dateParam, timeParam,
+                                                        masterParam, serviceParam, priceParam,
+                                                        bonusParam, 'Заявка');
+
+                  bot.sendMessage(chatId, sendHTML, {
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                      inline_keyboard: [
+                        [
+                          {
+                            text: TEXT_BTN.CANCEL_RECORD,
+                            callback_data: JSON.stringify({
+                              type: ACTION_TYPE.CANCEL_RECORD,
+                              recordId: record._id
+                            })
+                          }
+                        ]
+                      ]
+                    }
+                  });
+                })
+              })
+            })
+          })
+        })
+      });
       break;
 
-    // BACK -------------------------------------------------------------
-    case navigation.backBtn:
+    // REFERAL PROGRAMM PAGE -------------------------------------------------------------
+
+    case navigation.referalProgramPage.referalCodeBtn:
+      Customer.findOne({telegramId: chatId}).then(customer => {
+        sendText = MESSAGE.REFERAL_CODE(customer._id);
+        bot.sendMessage(chatId, sendText, {
+          reply_markup: {
+            keyboard: keyboard.referalShowOrInsertKeyboard
+          }
+        });
+      });
+      break;
+
+    case navigation.referalProgramPage.insertReferalCodeBtn:
+      bot.on('message', msg => {
+        const recievedText = msg.text;
+        Customer.find({_id: recievedText}).then(invitee => {
+          if (invitee.length !== 0) {
+            Customer.findOne({telegramId: chatId}).then(customer => {
+              if (customer.invitedBy === null) {
+                customer.bonuses += 1000;
+                customer.invitedBy = invitee[0]._id;
+                customer.save();
+                invitee[0].bonuses += 1000;
+                invitee[0].save();
+              }
+            });
+          }
+        });
+      })
+      sendText = MESSAGE.INSERT_REFERAL_CODE;
+      bot.sendMessage(chatId, sendText, {
+        reply_markup: {
+          keyboard: keyboard.referalShowOrInsertKeyboard
+        }
+      });
+      break;
+
+    // TO REFERAL PROGRAMM PAGE -------------------------------------------------------------
+
+    case navigation.toReferalProgramBtn:
+      sendText = MESSAGE.GO_TO_REFERAL_PROGRAM_PAGE;
+      bot.sendMessage(chatId, sendText, {
+        reply_markup: {
+          keyboard: keyboard.referalProgramKeyboard
+        }
+      });
+      break;
+
+    // TO ONLINE-RECORD PAGE -------------------------------------------------------------
+
+    case navigation.toOnlineRecordBtn:
+      sendText = MESSAGE.GO_TO_ONLINE_RECORD_PAGE;
+      bot.sendMessage(chatId, sendText, {
+        reply_markup: {
+          keyboard: keyboard.onlineRecordKeyboard
+        }
+      });
+      break; 
+
+    // TO MAIN PAGE -------------------------------------------------------------
+    
+    case navigation.toMainPageBtn:
       sendText = MESSAGE.GO_TO_MAIN_PAGE;
       bot.sendMessage(chatId, sendText, {
         reply_markup: {
@@ -253,45 +416,50 @@ bot.on('callback_query', query => {
         Record.findOne({inDevelopment: true, customer: customer._id}).then(record => {
           record.service = data.serviceId;
           record.save();
-        })
-      })
+          BranchOffice.findOne({_id: record.office}).then(office => {
+            const mastersInOffice = office.masters;
 
-      Master.find({}).then(masters => {
-        let photo;
-
-        for (let i = 0, p = Promise.resolve(); i < masters.length; i++) {
-          
-          p = p.then(_ => new Promise(resolve => {
-            photo = fs.readFileSync(__dirname.split('\\').slice(0, -3).join('\\') + `\\images\\${masters[i].photoUrl}`);
-            if (i > 0) {
-              sendText = `${DELIMITER}\n⬇️ ${helper.getFio(masters[i].firstname, masters[i].middlename, masters[i].lastname)}`;
-            } else {
-              sendText = `⬇️ ${helper.getFio(masters[i].firstname, masters[i].middlename, masters[i].lastname)}`;
-            }
-            bot.sendMessage(queryId, sendText)
-              .then(_ => {
-                bot.sendPhoto(queryId, photo, {
-                  reply_markup: {
-                    inline_keyboard: [
-                      [
-                        {
-                          text: TEXT_BTN.SELECT_MASTER(masters[i]),
-                          callback_data: JSON.stringify({
-                            type: ACTION_TYPE.CHOUSE_MASTER,
-                            masterId: masters[i]._id
-                          })
-                        }
-                      ]
-                    ]
+            Master.find({}).then(masters => {
+              let photo;
+      
+              for (let i = 0, p = Promise.resolve(); i < masters.length; i++) {
+                
+                p = p.then(_ => new Promise(resolve => {
+                  if (mastersInOffice.includes(masters[i]._id)) {
+                    photo = fs.readFileSync(__dirname.split('\\').slice(0, -2).join('\\') + `\\images\\${masters[i].photoUrl}`);
+                    if (i > 0) {
+                      sendText = `${DELIMITER}\n⬇️ ${helper.getFio(masters[i].firstname, masters[i].middlename, masters[i].lastname)}`;
+                    } else {
+                      sendText = `⬇️ ${helper.getFio(masters[i].firstname, masters[i].middlename, masters[i].lastname)}`;
+                    }
+                    bot.sendMessage(queryId, sendText)
+                      .then(_ => {
+                        bot.sendPhoto(queryId, photo, {
+                          reply_markup: {
+                            inline_keyboard: [
+                              [
+                                {
+                                  text: TEXT_BTN.SELECT_MASTER(masters[i]),
+                                  callback_data: JSON.stringify({
+                                    type: ACTION_TYPE.CHOUSE_MASTER,
+                                    masterId: masters[i]._id
+                                  })
+                                }
+                              ]
+                            ]
+                          }
+                        })
+                      })
                   }
-                })
-              });
-
-            setTimeout(function () {
-                resolve();
-            }, 1500) 
-          }));
-        }
+      
+                  setTimeout(function () {
+                      resolve();
+                  }, 1500) 
+                }))
+              }
+            })
+          })
+        })
       });
       break;
 
@@ -503,15 +671,26 @@ bot.on('callback_query', query => {
   
                 sendHTML = MESSAGE.RECORD_INFORMATION(adressParam, dateParam, timeParam,
                                                       masterParam, serviceParam, priceParam,
-                                                      bonusParam);
+                                                      bonusParam, 'Итог записи');
 
                 bot.sendMessage(queryId, sendHTML, {
-                  parse_mode: 'HTML'
+                  parse_mode: 'HTML',
+                  reply_markup: {
+                    keyboard: keyboard.onlineRecordKeyboard
+                  }
                 });
               })
             })
           })
         })
+      });
+      break;
+
+    // Обработка нажатия кнопки отмены заявки
+    case ACTION_TYPE.CANCEL_RECORD:
+      Record.findOne({_id: data.recordId}).then(record => {
+        record.isActual = false;
+        record.save();
       });
       break;
   }
@@ -538,7 +717,10 @@ function sayHi(chatId, name) {
       }
     }
 
+    sendText = [sendText, MESSAGE.DESCRIPTION_MAIN].join('\n\n');
+
     bot.sendMessage(chatId, sendText, {
+      parse_mode: 'HTML',
       reply_markup: {
         keyboard: keyboard.homeKeyboard
       }
@@ -555,8 +737,85 @@ function createCustomer(chatId, name) {
     .catch(err => console.log(err));
 }
 
-// Наполнение базы данных
-// const database = require('../../../db/database.json');
-// database.Service.forEach(service => new Service(service).save().catch(err => console.log(err)));
-// database.BranchOffice.forEach(office => new BranchOffice(office).save().catch(err => console.log(err)));
-// database.Master.forEach(master => new Master(master).save().catch(err => console.log(err)));
+function schedulesRefresh() {
+  const dateNow = new Date();
+  dateNow.setHours(0,0,0,0);
+
+  Master.find({}).then(masters => {
+    masters.forEach(master => {
+
+      if (+dateNow > +master.daysSchedule[0].date) {
+        const workingDays = master.workingDays;
+        const daysSchedule = master.daysSchedule;
+        let newDaysSchedule = [];
+
+        for (let i = 0; i < daysSchedule.length; i++) {
+          if (+daysSchedule[i].date >= +dateNow) {
+            newDaysSchedule.push(daysSchedule[i]);
+          }
+        };
+        let nextDate = daysSchedule[daysSchedule.length - 1].date;
+        let d = '';
+
+        while (newDaysSchedule.length !== daysSchedule.length) {
+          nextDate = new Date(nextDate.valueOf());
+          nextDate.setDate(nextDate.getDate() + 1);
+
+          const dayOfWeek = helper.getDayOfWeek(nextDate);
+          if (workingDays[String(dayOfWeek)]) {
+            const dayObject = {};
+            switch (dayOfWeek) {
+              case 'Monday':
+                d = 'пн';
+                break;
+              case 'Tuesday':
+                d = 'вт';
+                break;
+              case 'Wednesday':
+                d = 'ср';
+                break;
+              case 'Thursday':
+                d = 'чт';
+                break;
+              case 'Friday':
+                d = 'пт';
+                break;
+              case 'Saturday':
+                d = 'сб';
+                break;
+              case 'Sunday':
+                d = 'вс';
+                break;
+            };
+
+            dayObject['date'] = nextDate;
+            dayObject['day'] = d;
+            dayObject['time'] = [
+              {"hours": -1, "minutes": 0},
+              {"hours": 9, "minutes": 0},
+              {"hours": 10, "minutes": 0},
+              {"hours": 11, "minutes": 0},
+              {"hours": 12, "minutes": 0},
+              {"hours": 13, "minutes": 0},
+              {"hours": 14, "minutes": 0},
+              {"hours": 15, "minutes": 0},
+              {"hours": 16, "minutes": 0},
+              {"hours": 17, "minutes": 0},
+              {"hours": 18, "minutes": 0},
+              {"hours": -1, "minutes": 0},
+              {"hours": -1, "minutes": 0},
+              {"hours": -1, "minutes": 0},
+              {"hours": -1, "minutes": 0}
+            ];
+
+            newDaysSchedule.push(dayObject);
+          }
+        };
+        
+        master.daysSchedule = newDaysSchedule;
+        master.save();
+        console.log(`Schedule of master ${helper.getFio(master.firstname, master.middlename, master.lastname)} have been refreshed`);
+      }
+    })
+  })
+};

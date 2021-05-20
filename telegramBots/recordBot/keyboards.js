@@ -10,26 +10,22 @@ module.exports = {
   // Клавиатура для страницы меню онлайн-записи
   onlineRecordKeyboard: [
     [navigation.onlineRecordPage.recordBtn, navigation.onlineRecordPage.cancelBtn],
-    [navigation.backBtn]
+    [navigation.toMainPageBtn]
   ],
 
-  // Клавиатура для страницы подачи заявки
-  recordKeyboard: [
-    [navigation.recordPage.cancelBtn]
-  ],
-
-  // Клавиатура для страницы с прайс-листом
-  priceListKeyboard: [
-
-  ],
-
-  // Клавиатура для страницы с бонусным счетом
-  bonusesKeyboard: [
-
+  // Клавиатура для отмены заявок
+  cancelRecordKeyboard: [
+    [navigation.toOnlineRecordBtn, navigation.toMainPageBtn]
   ],
 
   // Клавиатура для страницы меню реферальной программы
-  referralProgramKeyboard: [
+  referalProgramKeyboard: [
+    [navigation.referalProgramPage.referalCodeBtn, navigation.referalProgramPage.insertReferalCodeBtn],
+    [navigation.toMainPageBtn]
+  ],
 
+  // Клавиатура для страниц показа или ввода реферального кода
+  referalShowOrInsertKeyboard: [
+    [navigation.toReferalProgramBtn, navigation.toMainPageBtn]
   ]
 }

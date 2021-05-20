@@ -40,5 +40,11 @@ module.exports = {
     const hoursUpd = 10 - hours <= 0 ? String(hours) : '0' + String(hours);
     const minutesUpd = 10 - minutes <= 0 ? String(minutes) : '0' + String(minutes);
     return `${hoursUpd}:${minutesUpd}`;
+  },
+
+  getDayOfWeek(date) {
+    const dayOfWeek = new Date(date).getDay();    
+    return isNaN(dayOfWeek) ? null : 
+      ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek];
   }
 }

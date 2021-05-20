@@ -4,8 +4,8 @@
   "description": "Информационная система для обслуживания сети парикмахерских салонов.",
   "main": "index.js",
   "scripts": {
-    "start": "node ./telegramBots/recordBot/src/index",
-    "dev": "nodemon ./telegramBots/recordBot/src/index"
+    "start": "node ./telegramBots/recordBot/index",
+    "dev": "nodemon ./telegramBots/recordBot/index"
   },
   "author": "Skomarovski Sergey",
   "license": "ISC",

@@ -18,25 +18,25 @@ const MasterSchema = new Schema({
     type: Boolean, default: false
   },
   workingDays: {
-    monday: {
+    Monday: {
       type: Boolean, default: true
     },
-    tuesday: {
+    Tuesday: {
       type: Boolean, default: true  
     },
-    wednesday: {
+    Wednesday: {
       type: Boolean, default: true
     },
-    thursday: {
+    Thursday: {
       type: Boolean, default: true
     },
-    friday: {
+    Friday: {
       type: Boolean, default: true  
     },
-    saturday: {
+    Saturday: {
       type: Boolean, default: false
     },
-    sunday: {
+    Sunday: {
       type: Boolean, default: false
     }
   },
@@ -50,6 +50,9 @@ const MasterSchema = new Schema({
       },
       minutes: {
         type: Number, default: 0, min: 0, max: 59
+      },
+      busy: {
+        type: Boolean, default: false
       }
     }],
     day: {
